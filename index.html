@@ -576,7 +576,7 @@
   // ============================================================
   // counterapi.dev — free anonymous counter API. No backend needed.
   // Change NAMESPACE if you want a fresh, isolated counter.
-  const NAMESPACE   = 'pitch-ixd-naba-spring-2026';
+  const NAMESPACE   = 'pitch-ixd-naba-2026';
   const API_BASE    = 'https://api.counterapi.dev/v1/' + NAMESPACE;
   const STORAGE_KEY = 'pitch-ixd-vote-2026';
 
@@ -601,25 +601,52 @@
   }
 
   // ============================================================
-  // API
+  // API — counterapi.dev requires trailing slash on GET (otherwise
+  // it returns a 301 redirect without CORS headers and the browser
+  // blocks the request). The /up endpoint works without slash.
   // ============================================================
   async function getCount(key) {
     try {
-      const r = await fetch(`${API_BASE}/${key}`);
-      if (!r.ok) throw new Error('fetch failed');
+      const r = await fetch(`${API_BASE}/${key}/`);
+      if (!r.ok) {
+        // 400 "record not found" is normal for a fresh counter
+        if (r.status === 400) return 0;
+        throw new Error('GET ' + key + ' failed: ' + r.status);
+      }
       const data = await r.json();
       return Number(data.count ?? data.value ?? 0);
     } catch (e) {
-      console.warn('getCount', e);
+      console.error('[vote] getCount', key, e);
       return 0;
     }
   }
 
   async function incrementCount(key) {
-    const r = await fetch(`${API_BASE}/${key}/up`);
-    if (!r.ok) throw new Error('increment failed');
-    const data = await r.json();
-    return Number(data.count ?? data.value ?? 0);
+    const url = `${API_BASE}/${key}/up`;
+    let r;
+    try {
+      r = await fetch(url);
+    } catch (e) {
+      console.error('[vote] network error on', url, e);
+      throw new Error('Errore di rete. ' + (e && e.message ? e.message : ''));
+    }
+    if (!r.ok) {
+      console.error('[vote] HTTP', r.status, 'on', url);
+      throw new Error('Server ha risposto con status ' + r.status);
+    }
+    let data;
+    try {
+      data = await r.json();
+    } catch (e) {
+      console.error('[vote] invalid JSON from', url, e);
+      throw new Error('Risposta del server non valida');
+    }
+    const count = Number(data.count ?? data.value ?? NaN);
+    if (Number.isNaN(count)) {
+      console.error('[vote] no count in response', data);
+      throw new Error('Conteggio non trovato nella risposta');
+    }
+    return count;
   }
 
   // ============================================================
@@ -687,7 +714,8 @@
       if (navigator.vibrate) navigator.vibrate(20);
     } catch (e) {
       unlockButtons();
-      setStatus('Voto non riuscito. Controlla la connessione e riprova.', 'error');
+      const detail = e && e.message ? ` — ${e.message}` : '';
+      setStatus(`Voto non riuscito${detail}. Riprova fra qualche secondo.`, 'error');
     }
   }
 
