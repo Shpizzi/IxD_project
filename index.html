@@ -576,9 +576,9 @@
   // ============================================================
   // counterapi.dev — free anonymous counter API. No backend needed.
   // Change NAMESPACE if you want a fresh, isolated counter.
-  const NAMESPACE   = 'pitch-ixd-naba-2026';
+  const NAMESPACE   = 'pitch-ixd-naba-2026-v2';
   const API_BASE    = 'https://api.counterapi.dev/v1/' + NAMESPACE;
-  const STORAGE_KEY = 'pitch-ixd-vote-2026';
+  const STORAGE_KEY = 'pitch-ixd-vote-2026-v2';
 
   const concepts = ['spare', 'civic'];
   let counts = { spare: 0, civic: 0 };
@@ -621,8 +621,9 @@
     }
   }
 
-  async function incrementCount(key) {
-    const url = `${API_BASE}/${key}/up`;
+  async function changeCount(key, direction) {
+    // direction: 'up' or 'down'
+    const url = `${API_BASE}/${key}/${direction}`;
     let r;
     try {
       r = await fetch(url);
@@ -648,6 +649,8 @@
     }
     return count;
   }
+  const incrementCount = (key) => changeCount(key, 'up');
+  const decrementCount = (key) => changeCount(key, 'down');
 
   // ============================================================
   // Render
@@ -719,12 +722,29 @@
     }
   }
 
-  function resetVote() {
-    localStorage.removeItem(STORAGE_KEY);
-    voted = null;
-    resetBtn.hidden = true;
-    unlockButtons();
-    setStatus('Voto annullato in locale. Il conteggio totale resta invariato.');
+  let resetting = false;
+  async function resetVote() {
+    if (!voted || resetting) return;
+    resetting = true;
+    const previous = voted;
+    resetBtn.disabled = true;
+    setStatus('Sto annullando il voto…');
+    try {
+      const newCount = await decrementCount(previous);
+      counts[previous] = Math.max(0, newCount);
+      localStorage.removeItem(STORAGE_KEY);
+      voted = null;
+      resetBtn.hidden = true;
+      unlockButtons();
+      renderResults();
+      setStatus('Voto annullato. Puoi votare di nuovo.');
+    } catch (e) {
+      const detail = e && e.message ? ` — ${e.message}` : '';
+      setStatus(`Annullamento non riuscito${detail}. Riprova fra un attimo.`, 'error');
+    } finally {
+      resetBtn.disabled = false;
+      resetting = false;
+    }
   }
 
   // ============================================================
